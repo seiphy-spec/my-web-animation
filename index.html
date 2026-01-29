@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>物理動畫：學生能階躍遷模擬</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #050505;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            color: white;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        #ui-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(20, 20, 20, 0.8);
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+            width: 250px;
+            user-select: none;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            font-size: 14px;
+            margin-bottom: 5px;
+            color: #aaa;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            cursor: pointer;
+        }
+
+        .stats {
+            margin-top: 15px;
+            font-size: 12px;
+            color: #00ffcc;
+            font-family: monospace;
+        }
+
+        h1 {
+            font-size: 18px;
+            margin: 0 0 10px 0;
+            color: #ff0077;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="ui-panel">
+    <h1>狀態能階模擬</h1>
+    <div class="control-group">
+        <label>環境活躍度 (溫度): <span id="temp-val">0.5</span></label>
+        <input type="range" id="temp-slider" min="0" max="1" step="0.01" value="0.3">
+    </div>
+    <div class="control-group">
+        <label>能階間距 (覺醒難度): <span id="gap-val">100</span></label>
+        <input type="range" id="gap-slider" min="50" max="300" step="1" value="150">
+    </div>
+    <div class="stats" id="stats-display">
+        激發態 (滑手機): 0 <br>
+        基態 (睡覺中): 0
+    </div>
+</div>
+
+<script>
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    document.body.appendChild(canvas);
+
+    let width, height;
+    let particles = [];
+    const particleCount = 40;
+    
+    // UI 控制項
+    const tempSlider = document.getElementById('temp-slider');
+    const gapSlider = document.getElementById('gap-slider');
+    const tempValDisp = document.getElementById('temp-val');
+    const gapValDisp = document.getElementById('gap-val');
+    const statsDisp = document.getElementById('stats-display');
+
+    // 物理參數
+    let temperature = 0.3;
+    let energyGap = 150;
+    
+    class StudentParticle {
+        constructor(id) {
+            this.id = id;
+            this.reset();
+            // 初始隨機狀態
+            this.state = Math.random() > 0.8 ? 'excited' : 'ground';
+            this.y = this.getTargetY();
+        }
+
+        reset() {
+            this.x = Math.random() * width;
+            this.size = 4 + Math.random() * 4;
+            this.vx = (Math.random() - 0.5) * 2;
+            this.vy = 0;
+            this.color = '';
+            this.glow = '';
+        }
+
+        getTargetY() {
+            return this.state === 'excited' ? (height / 2 - energyGap / 2) : (height / 2 + energyGap / 2);
+        }
+
+        update() {
+            // 隨機跳轉狀態 (模擬熱激發與自發輻射)
+            const jumpProb = Math.random();
+            if (this.state === 'ground') {
+                // 從基態(睡覺) 躍遷到 激發態(滑手機) 的機率與溫度成正比
+                if (jumpProb < 0.01 * temperature) {
+                    this.state = 'excited';
+                    this.createSpark();
+                }
+            } else {
+                // 從激發態 回到 基態 的機率 (能量釋放)
+                if (jumpProb < 0.02 * (1.1 - temperature)) {
+                    this.state = 'ground';
+                }
+            }
+
+            // 平滑移動到目標能階
+            const targetY = this.getTargetY();
+            const dy = targetY - this.y;
+            this.y += dy * 0.1;
+
+            // 水平漂移
+            this.x += this.vx;
+            if (this.x < 0) this.x = width;
+            if (this.x > width) this.x = 0;
+
+            // 視覺更新
+            if (this.state === 'excited') {
+                this.color = '#00f2ff'; // 霓虹藍 - 活動中
+                this.glow = 'rgba(0, 242, 255, 0.5)';
+            } else {
+                this.color = '#ff0077'; // 霓虹粉 - 沉睡中
+                this.glow = 'rgba(255, 0, 119, 0.5)';
+            }
+        }
+
+        createSpark() {
+            // 狀態切換時的閃爍回饋
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.size * 3, 0, Math.PI * 2);
+            ctx.fillStyle = 'white';
+            ctx.fill();
+            ctx.restore();
+        }
+
+        draw() {
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = this.glow;
+            ctx.fillStyle = this.color;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        }
+    }
+
+    function init() {
+        resize();
+        particles = [];
+        for (let i = 0; i < particleCount; i++) {
+            particles.push(new StudentParticle(i));
+        }
+    }
+
+    function resize() {
+        width = window.innerWidth;
+        height = window.innerHeight;
+        canvas.width = width;
+        canvas.height = height;
+    }
+
+    window.addEventListener('resize', resize);
+
+    function drawBackground() {
+        // 繪製軌跡殘影
+        ctx.fillStyle = 'rgba(5, 5, 5, 0.15)';
+        ctx.fillRect(0, 0, width, height);
+
+        // 繪製能階線
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+        ctx.setLineDash([5, 15]);
+        
+        // 激發態軌道
+        ctx.beginPath();
+        ctx.moveTo(0, height / 2 - energyGap / 2);
+        ctx.lineTo(width, height / 2 - energyGap / 2);
+        ctx.stroke();
+
+        // 基態軌道
+        ctx.beginPath();
+        ctx.moveTo(0, height / 2 + energyGap / 2);
+        ctx.lineTo(width, height / 2 + energyGap / 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        
+        // 標記文字
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.font = '12px Arial';
+        ctx.fillText("激發態 (滑手機 / 活躍)", 20, height / 2 - energyGap / 2 - 10);
+        ctx.fillText("基態 (睡覺中 / 穩定)", 20, height / 2 + energyGap / 2 + 20);
+    }
+
+    function update() {
+        temperature = parseFloat(tempSlider.value);
+        energyGap = parseInt(gapSlider.value);
+        
+        tempValDisp.innerText = temperature.toFixed(2);
+        gapValDisp.innerText = energyGap;
+
+        let excitedCount = 0;
+        let groundCount = 0;
+
+        particles.forEach(p => {
+            p.update();
+            if (p.state === 'excited') excitedCount++;
+            else groundCount++;
+        });
+
+        statsDisp.innerHTML = `激發態 (滑手機): ${excitedCount} <br>基態 (睡覺中): ${groundCount}`;
+    }
+
+    function animate() {
+        drawBackground();
+        update();
+        particles.forEach(p => p.draw());
+        requestAnimationFrame(animate);
+    }
+
+    window.onload = () => {
+        init();
+        animate();
+    };
+</script>
+
+</body>
+</html>
